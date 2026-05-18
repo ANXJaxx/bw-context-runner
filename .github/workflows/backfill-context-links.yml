@@ -1,0 +1,74 @@
+name: Backfill BW Context Linker AI sentences
+
+# Runs every 30 minutes, walks every site in sites.json + external-sites.json,
+# calls each site's /bw-context-linker/v1/process-next endpoint to generate
+# AI sentences for the oldest not-yet-processed posts. Globally paced to stay
+# under Groq's free-tier rate limit. Safe to leave running forever — once
+# every post is processed (with either insertions or "no fit"), each cycle
+# just exits early.
+
+on:
+  schedule:
+    # Every 30 minutes. Adjust if you want faster/slower backfill cadence.
+    - cron: "*/30 * * * *"
+  workflow_dispatch:
+    inputs:
+      only:
+        description: "Only this domain (substring match) — leave blank for all"
+        required: false
+        default: ""
+      rpm:
+        description: "Global requests-per-minute target (max 200)"
+        required: false
+        default: "120"
+      batch:
+        description: "Posts per site per call (1-10)"
+        required: false
+        default: "2"
+      max_minutes:
+        description: "Max runtime in minutes (cap 350)"
+        required: false
+        default: "320"
+
+jobs:
+  backfill:
+    runs-on: ubuntu-latest
+    timeout-minutes: 350
+    concurrency:
+      # Don't let two runs trample each other (cron + manual dispatch overlap)
+      group: backfill-context-links
+      cancel-in-progress: false
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+
+      - name: Install deps
+        run: npm install --no-audit --no-fund
+
+      - name: Run backfill
+        env:
+          # Shared credentials (one per all engine sites). Set as repo secrets.
+          WP_USERNAME: ${{ secrets.WP_USERNAME }}
+          WP_APP_PASSWORD: ${{ secrets.WP_APP_PASSWORD }}
+          # Per-site password overrides for external sites with unique credentials.
+          # Paste your local .passwords.json contents into this secret as one
+          # multiline value. Example: {"site1.com":"xxxx xxxx ...","site2.com":"..."}
+          WP_PASSWORDS_JSON: ${{ secrets.WP_PASSWORDS_JSON }}
+          # Manual-dispatch inputs (defaults used by cron)
+          ONLY: ${{ github.event.inputs.only }}
+          RPM: ${{ github.event.inputs.rpm || '120' }}
+          BATCH: ${{ github.event.inputs.batch || '2' }}
+          MAX_MINUTES: ${{ github.event.inputs.max_minutes || '320' }}
+        run: |
+          ARGS="--rpm=$RPM --batch=$BATCH --max-minutes=$MAX_MINUTES"
+          if [ -n "$ONLY" ]; then ARGS="$ARGS --only=$ONLY"; fi
+          echo "Running: node scripts/backfill-context-links.js $ARGS"
+          node scripts/backfill-context-links.js $ARGS
+        shell: bash

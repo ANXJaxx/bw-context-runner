@@ -1,0 +1,13 @@
+{
+  "name": "bw-context-runner",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Runs scheduled BW Context Linker AI-sentence backfill against all WP sites listed in sites.json + external-sites.json. Designed for GitHub Actions.",
+  "scripts": {
+    "backfill": "node scripts/backfill-context-links.js"
+  },
+  "dependencies": {
+    "axios": "^1.7.0",
+    "dotenv": "^16.4.0"
+  }
+}
