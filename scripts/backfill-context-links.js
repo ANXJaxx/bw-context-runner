@@ -18,7 +18,7 @@
 //   --skip-done            skip sites already fully backfilled (default true)
 //   --dry-run              show what would happen but don't make calls
 
-const { loadAllSites, siteUrl } = require('./lib/load-config');
+const { loadAllSites } = require('./lib/load-config');
 const { wpClient, logAxiosError } = require('./lib/wp-client');
 
 function parseArgs(argv) {
@@ -60,7 +60,7 @@ async function main() {
 
     // Track per-site state so we don't waste calls on sites already complete or rate-limited
     const siteState = new Map();
-    for (const s of sites) siteState.set(s.domain, { done: false, rateLimitedUntil: 0, lastMissing: null, totalProcessed: 0, errors: 0 });
+    for (const s of sites) siteState.set(s.domain, { done: false, rateLimitedUntil: 0, lastMissing: null, totalProcessed: 0, errors: 0, costAtStart: null, costAtEnd: null });
 
     let cycle = 0;
     let totalCalls = 0;
@@ -87,6 +87,16 @@ async function main() {
             }
 
             try {
+                // Record cost baseline for this site on first touch this run (lets us
+                // compute "spent this run" at the end without per-call polling)
+                if (state.costAtStart === null) {
+                    try {
+                        const { data: c } = await wp.get('/bw-context-linker/v1/cost-stats', { timeout: 10000 });
+                        state.costAtStart = { calls: c.calls || 0, input_tokens: c.input_tokens || 0, output_tokens: c.output_tokens || 0, usd: c.usd || 0 };
+                    } catch (e) {
+                        state.costAtStart = { calls: 0, input_tokens: 0, output_tokens: 0, usd: 0 };
+                    }
+                }
                 const t0 = Date.now();
                 const { data } = await wp.post('/bw-context-linker/v1/process-next', null, { params: { batch: args.batch }, timeout: 60000 });
                 const dt = Date.now() - t0;
@@ -168,6 +178,43 @@ async function main() {
     console.log(`Posts still missing:  ~${missing} (sum of last-known missing)`);
     console.log(`Sites with errors:    ${errored}`);
     console.log(`Total runtime:        ${((Date.now() - (deadline - args.maxMinutes * 60 * 1000)) / 60000).toFixed(1)} min`);
+
+    // === COST THIS RUN === — poll /cost-stats on every site that did work,
+    // diff with the cost recorded at the START of this run, and total it up.
+    if (!args.dryRun) {
+        console.log('\n=== COST THIS RUN ===');
+        let runTokensIn = 0, runTokensOut = 0, runUsd = 0, runCalls = 0, polled = 0;
+        const activeSites = sites.filter(s => siteState.get(s.domain).totalProcessed > 0 || siteState.get(s.domain).done);
+        const BATCH = 10;
+        for (let i = 0; i < activeSites.length; i += BATCH) {
+            const batch = activeSites.slice(i, i + BATCH);
+            await Promise.all(batch.map(async site => {
+                try {
+                    const wp = wpClient(site);
+                    const { data } = await wp.get('/bw-context-linker/v1/cost-stats', { timeout: 15000 });
+                    const startCost = siteState.get(site.domain).costAtStart;
+                    if (startCost !== null) {
+                        runTokensIn  += (data.input_tokens  || 0) - (startCost.input_tokens  || 0);
+                        runTokensOut += (data.output_tokens || 0) - (startCost.output_tokens || 0);
+                        runUsd       += (data.usd           || 0) - (startCost.usd           || 0);
+                        runCalls     += (data.calls         || 0) - (startCost.calls         || 0);
+                    } else {
+                        // No baseline (first time we polled this site this run) — count whole
+                        runTokensIn  += data.input_tokens  || 0;
+                        runTokensOut += data.output_tokens || 0;
+                        runUsd       += data.usd           || 0;
+                        runCalls     += data.calls         || 0;
+                    }
+                    polled++;
+                } catch (e) { /* skip — site may be down */ }
+            }));
+        }
+        console.log(`Polled cost endpoint on ${polled} active site(s)`);
+        console.log(`AI calls this run:     ${runCalls.toLocaleString()}`);
+        console.log(`Tokens this run:       ${runTokensIn.toLocaleString()} in / ${runTokensOut.toLocaleString()} out`);
+        console.log(`Spent this run:        $${runUsd.toFixed(4)}`);
+        if (runCalls > 0) console.log(`Avg per call:          $${(runUsd / runCalls).toFixed(6)}`);
+    }
 }
 
 main().catch(err => { console.error('FATAL:', err.message); process.exit(1); });
