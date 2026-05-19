@@ -28,12 +28,30 @@ function readJsonOrEmptyArray(file) {
     }
 }
 
+function parseEnvJsonArray(envVarName) {
+    const raw = process.env[envVarName];
+    if (!raw) return null;
+    try {
+        const v = JSON.parse(raw);
+        return Array.isArray(v) ? v : null;
+    } catch (e) {
+        console.error(envVarName + ' is set but not valid JSON array: ' + e.message);
+        return null;
+    }
+}
+
+// Sites can come from env var (GH Actions, preferred when set) OR a local file
+// (dev machine fallback). Env wins so production stays decoupled from disk.
 function loadSites() {
+    const fromEnv = parseEnvJsonArray('SITES_JSON');
+    if (fromEnv) return fromEnv;
     return readJsonOrEmptyArray(path.join(RUNNER_ROOT, 'sites.json'));
 }
 
 function loadExternalSites() {
-    return readJsonOrEmptyArray(path.join(RUNNER_ROOT, 'external-sites.json')).map(s => ({ ...s, _external: true }));
+    const fromEnv = parseEnvJsonArray('EXTERNAL_SITES_JSON');
+    const arr = fromEnv || readJsonOrEmptyArray(path.join(RUNNER_ROOT, 'external-sites.json'));
+    return arr.map(s => ({ ...s, _external: true }));
 }
 
 function loadAllSites() {

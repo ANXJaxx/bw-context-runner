@@ -1,6 +1,8 @@
 .env
 .env.local
 .passwords.json
+sites.json
+external-sites.json
 node_modules/
 *.log
 .DS_Store

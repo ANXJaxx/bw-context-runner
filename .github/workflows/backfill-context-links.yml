@@ -60,6 +60,10 @@ jobs:
           # Paste your local .passwords.json contents into this secret as one
           # multiline value. Example: {"site1.com":"xxxx xxxx ...","site2.com":"..."}
           WP_PASSWORDS_JSON: ${{ secrets.WP_PASSWORDS_JSON }}
+          # Site lists — kept out of the repo and pasted as secrets so the repo
+          # can stay slim and (optionally) public without exposing domain lists.
+          SITES_JSON: ${{ secrets.SITES_JSON }}
+          EXTERNAL_SITES_JSON: ${{ secrets.EXTERNAL_SITES_JSON }}
           # Manual-dispatch inputs (defaults used by cron)
           ONLY: ${{ github.event.inputs.only }}
           RPM: ${{ github.event.inputs.rpm || '120' }}
