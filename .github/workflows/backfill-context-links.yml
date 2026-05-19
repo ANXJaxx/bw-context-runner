@@ -20,24 +20,26 @@ on:
       rpm:
         description: "Global requests-per-minute target (max 200)"
         required: false
-        default: "120"
+        default: "150"
       batch:
         description: "Posts per site per call (1-10)"
         required: false
-        default: "2"
+        default: "3"
       max_minutes:
-        description: "Max runtime in minutes (cap 350)"
+        description: "Max runtime in minutes per run (keep < cron interval to avoid queue pileup)"
         required: false
-        default: "320"
+        default: "20"
 
 jobs:
   backfill:
     runs-on: ubuntu-latest
-    timeout-minutes: 350
+    timeout-minutes: 25
     concurrency:
-      # Don't let two runs trample each other (cron + manual dispatch overlap)
+      # If a new run arrives while the previous is still going (shouldn't happen
+      # given max-minutes=20 vs cron */30), cancel the older one rather than queue.
+      # This avoids the "1 queued + 1 cancelled per cycle" pattern.
       group: backfill-context-links
-      cancel-in-progress: false
+      cancel-in-progress: true
 
     steps:
       - name: Checkout repo
@@ -66,9 +68,9 @@ jobs:
           EXTERNAL_SITES_JSON: ${{ secrets.EXTERNAL_SITES_JSON }}
           # Manual-dispatch inputs (defaults used by cron)
           ONLY: ${{ github.event.inputs.only }}
-          RPM: ${{ github.event.inputs.rpm || '120' }}
-          BATCH: ${{ github.event.inputs.batch || '2' }}
-          MAX_MINUTES: ${{ github.event.inputs.max_minutes || '320' }}
+          RPM: ${{ github.event.inputs.rpm || '150' }}
+          BATCH: ${{ github.event.inputs.batch || '3' }}
+          MAX_MINUTES: ${{ github.event.inputs.max_minutes || '20' }}
         run: |
           ARGS="--rpm=$RPM --batch=$BATCH --max-minutes=$MAX_MINUTES"
           if [ -n "$ONLY" ]; then ARGS="$ARGS --only=$ONLY"; fi

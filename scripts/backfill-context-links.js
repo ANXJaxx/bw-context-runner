@@ -22,7 +22,7 @@ const { loadAllSites } = require('./lib/load-config');
 const { wpClient, logAxiosError } = require('./lib/wp-client');
 
 function parseArgs(argv) {
-    const args = { only: null, rpm: 120, batch: 2, maxMinutes: 320, skipDone: true, dryRun: false };
+    const args = { only: null, rpm: 150, batch: 3, maxMinutes: 20, skipDone: true, dryRun: false };
     for (const a of argv) {
         if (a.startsWith('--only=')) args.only = a.slice('--only='.length);
         else if (a.startsWith('--rpm=')) args.rpm = Math.min(200, Math.max(10, parseInt(a.slice('--rpm='.length), 10)));
