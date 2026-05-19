@@ -9,8 +9,10 @@ name: Backfill BW Context Linker AI sentences
 
 on:
   schedule:
-    # Every 30 minutes. Adjust if you want faster/slower backfill cadence.
-    - cron: "*/30 * * * *"
+    # Every hour at :07 — off-the-hour to avoid GitHub's "everyone scheduled at :00/:30"
+    # backlog. Hourly is plenty given our throughput; runs cap at 20 min so they
+    # never overlap with the next tick.
+    - cron: "7 * * * *"
   workflow_dispatch:
     inputs:
       only:
@@ -35,11 +37,10 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 25
     concurrency:
-      # If a new run arrives while the previous is still going (shouldn't happen
-      # given max-minutes=20 vs cron */30), cancel the older one rather than queue.
-      # This avoids the "1 queued + 1 cancelled per cycle" pattern.
+      # Hourly cron + 20-min cap = no overlaps expected. If GitHub delays a tick
+      # so much that two end up overlapping, let the second one wait.
       group: backfill-context-links
-      cancel-in-progress: true
+      cancel-in-progress: false
 
     steps:
       - name: Checkout repo
