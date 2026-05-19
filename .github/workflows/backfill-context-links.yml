@@ -30,12 +30,12 @@ on:
       max_minutes:
         description: "Max runtime in minutes per run (keep < cron interval to avoid queue pileup)"
         required: false
-        default: "20"
+        default: "50"
 
 jobs:
   backfill:
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    timeout-minutes: 55
     concurrency:
       # Hourly cron + 20-min cap = no overlaps expected. If GitHub delays a tick
       # so much that two end up overlapping, let the second one wait.
@@ -71,7 +71,7 @@ jobs:
           ONLY: ${{ github.event.inputs.only }}
           RPM: ${{ github.event.inputs.rpm || '150' }}
           BATCH: ${{ github.event.inputs.batch || '3' }}
-          MAX_MINUTES: ${{ github.event.inputs.max_minutes || '20' }}
+          MAX_MINUTES: ${{ github.event.inputs.max_minutes || '50' }}
         run: |
           ARGS="--rpm=$RPM --batch=$BATCH --max-minutes=$MAX_MINUTES"
           if [ -n "$ONLY" ]; then ARGS="$ARGS --only=$ONLY"; fi
